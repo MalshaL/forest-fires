@@ -1,0 +1,630 @@
+---
+author: "Malsha Ranawaka"
+date: "20 Oct 2020"
+title: \large \textbf{APPENDIX}
+geometry: margin=1.5cm
+fontsize: 10pt
+output: pdf_document
+classoption: twocolumn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+\tiny
+### 1. Importing Packages
+```{r}
+library(ISLR)
+library(tree)
+library(ggplot2)
+library(boot)
+```
+
+### 2. Data Description
+
+```{r}
+# read and attach dataset
+fire_data = read.csv("forestfires.csv")
+attach(fire_data)
+
+# get first few lines of the dataset
+head(fire_data)
+
+# get the size of the dataset
+dim(fire_data)
+
+# class of each variable in the dataset
+sapply(fire_data, class)
+
+# structure of the dataset
+str(fire_data)
+
+# summary of the dataset
+summary(fire_data)
+
+# check if dataset contains NA values
+colSums(is.na(fire_data))
+```
+
+### 3. Data Preprocessing
+### 3.1 Target Variable
+
+```{r fig.height=3}
+# plot the distribution of the target variable
+par(mfrow=c(1,3))
+hist(fire_data$area, main = "area", xlab = "")
+hist(log(fire_data$area), main = "log(area)", xlab = "")
+hist(log(fire_data$area+1), main = "log(area+1)", xlab = "")
+mtext("Distribution of Burnt Area", line = -1, outer = TRUE, cex = 0.8, font=2)
+
+# calculate the percentage of zeros in the target variable
+sum(fire_data$area==0)*100/dim(fire_data)[1]
+
+# transform target variable of the dataset
+fire_data$area_log <- log(fire_data$area+1)
+```
+
+### 3.2 Mapping categorical variables to numbers
+
+```{r}
+# map month names to numbers
+fire_data$month_num <- match(fire_data$month, tolower(month.abb))
+
+days = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+# map day names to numbers
+fire_data$day_num <- match(fire_data$day, tolower(days))
+```
+
+### 3.3 Transformed dataset
+
+```{r}
+# create the transformed dataset
+transformed_data <- fire_data[1:2]
+transformed_data$Month <- fire_data$month_num
+transformed_data$Day <- fire_data$day_num
+transformed_data <- cbind(transformed_data, fire_data[5:8])
+transformed_data$Temperature <- fire_data$temp
+transformed_data <- cbind(transformed_data, fire_data[10])
+transformed_data$Wind <- fire_data$wind
+transformed_data$Rain <- fire_data$rain
+transformed_data$Area <- fire_data$area_log
+head(transformed_data)
+```
+
+### 3.4 Linear relationship and Correlation
+
+```{r fig.width=16, fig.height=12}
+# plot linear relationship of target variable against independent variables 
+par(mfrow=c(3, 4))
+fire_data_x <- transformed_data[-13]
+var_names <- colnames(fire_data_x)
+
+i <- 1
+for (col in fire_data_x){
+  plot_title <- paste("Area vs", var_names[i])
+
+  if (var_names[i] == 'Month') {
+    plot(col, transformed_data$Area, 
+       main = plot_title, xlab = "", ylab = "", 
+       type = "p", col = colors()[81], pch = 20, xaxt = "n")
+    axis(1, at=1:12, labels=month.abb) 
+  }
+  else if (var_names[i] == 'Day'){
+    plot(col, transformed_data$Area, 
+       main = plot_title, xlab = "", ylab = "", 
+       type = "p", col = colors()[81], pch = 20, xaxt = "n")
+    axis(1, at=1:7, labels=days) 
+  } else {
+    plot(col, transformed_data$Area, 
+       main = plot_title, xlab = "", ylab = "", 
+       type = "p", col = colors()[81], pch = 20)
+  }
+  i <- i+1
+}
+
+# plot the pairwise correlation plots
+pairs(transformed_data, panel = panel.smooth, pch = 20, col = colors()[125])
+
+# get the correlation coefficients 
+cor(transformed_data, method = "pearson")
+
+# order correlations with target variable 
+target_cor <- cor(transformed_data$Area, transformed_data)
+# get the sorted indexes to order variable names
+sorted_indexes <- order(target_cor, decreasing = TRUE)
+# create sorted dataframe with variable names in the sorted order
+sorted_cor <- t(data.frame(colnames(target_cor)[sorted_indexes], sort(target_cor, decreasing = TRUE)))
+row.names(sorted_cor) <- NULL
+sorted_cor
+```
+
+### 3.5 Relationship between Categorical Variables and Target
+
+### 3.5.1 Burnt areas by location
+
+```{r fig.width=10, fig.height=8}
+heatmap_labels <- c(1:9)
+# plot geographical location distribution in relation to burnt area
+ggplot(transformed_data, aes(x=X, y=Y, fill=Area)) + theme_bw() + geom_tile() + 
+  xlab("X Coordinate") + ylab("Y Coordinate") +
+  scale_x_continuous(limits = c(0.5,9.5), expand = c(0, 0), 
+                     breaks = seq_along(heatmap_labels), labels = heatmap_labels) +
+  scale_y_continuous(limits = c(0.5,9.5), expand = c(0, 0),
+                     breaks = seq_along(heatmap_labels), labels = heatmap_labels) +
+  theme(
+    panel.background = element_rect(fill = "#d5e0c9"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_line(color = "#93a57f"),
+    axis.ticks = element_blank(),
+    panel.border = element_blank()) +
+    scale_fill_gradient(low="#fce8d4", high="orangered3", name="Burnt Area")
+```
+
+### 3.5.2 Burnt areas by season
+
+```{r fig.width=10, fig.height=10}
+# map months to seasons
+# spring - March, April, May
+# summer - June, July, Aug
+# autumn - Sep, Oct, Nov
+# winter - Dec, Jan, Feb
+
+month_to_season <- c(4, 4, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4)
+fireseason_data <- transformed_data
+fireseason_data$Season <- month_to_season[fireseason_data$Month]
+plot(fireseason_data$Area, 1:dim(fireseason_data)[1], col = fireseason_data$Season+1, 
+     type = "p", pch = 16, xlab = "Area", ylab = "Index")
+legend( "bottomright", c("Spring", "Summer", "Autumn", "Winter"), 
+        text.col=c(2,3,4,5) )
+```
+
+
+
+### 4. Decision Tree Modelling
+### 4.1 Regression Tree
+### 4.1.1 Regression Tree for Complete Dataset
+
+```{r}
+# tree model for the complete dataset
+reg_tree1 <- tree(Area~., data = transformed_data)
+summary(reg_tree1)
+print(reg_tree1)
+
+# plot the tree
+plot(reg_tree1, col = colors()[125])
+text(reg_tree1, pretty = 0)
+
+# predict using the model
+reg_predict0 = predict(reg_tree1, newdata = transformed_data) 
+reg_test0 = transformed_data[, 'Area'] 
+plot(reg_predict0, reg_test0, xlab = "Predicted", ylab = "Actual", 
+     type = "p", pch = 20, col = colors()[125])
+abline(0,1)
+
+# calculate the mean squared error
+MSE0 <- mean((reg_predict0-reg_test0)^2)
+cat("MSE: ", MSE0, "\t", "Sqrt MSE: ", sqrt(MSE0), "\n", sep = "")
+```
+
+### 4.1.2 Regression Tree with train-test split and cross validation
+```{r}
+# set the seed for sampling
+set.seed(2)
+
+# get the train test split
+reg_train_split <- sample(1:nrow(transformed_data), nrow(transformed_data)*0.5)
+
+# train the tree model
+reg_tree2 <- tree(Area~., data = transformed_data, subset = reg_train_split)
+summary(reg_tree2)
+print(reg_tree2)
+```
+
+```{r, fig.height=10, fig.width=15}
+# plot the trained tree
+plot(reg_tree2, col = colors()[125])
+text(reg_tree2, pretty = 0)
+```
+
+```{r}
+# predict using the model
+reg_predict = predict(reg_tree2, newdata = transformed_data[-reg_train_split,]) 
+reg_test = transformed_data[-reg_train_split, 'Area'] 
+plot(reg_predict, reg_test, xlab = "Predicted", ylab = "Actual", 
+     type = "p", pch = 20, col = colors()[125])
+abline(0,1)
+
+# calculate the mean squared error
+MSE <- mean((reg_predict-reg_test)^2)
+cat("MSE: ", MSE, "\t", "Sqrt MSE: ", sqrt(MSE), "\n", sep = "")
+
+
+# train model using cross validation
+reg_cv <- cv.tree(reg_tree2)
+reg_cv
+# plot the cross validation results, deviation explained by the model against the size of the tree
+plot(reg_cv$size, reg_cv$dev, type = "b", col = colors()[371],
+     xlab = "Size", ylab = "Deviation")
+
+# prune tree based on the cv results
+reg_pruned_tree = prune.tree(reg_tree2, best = 7) 
+summary(reg_pruned_tree)
+# plot the pruned tree
+plot(reg_pruned_tree, col = colors()[371]) 
+text(reg_pruned_tree, pretty = 0)
+
+# predict using the pruned tree
+reg_predict2 = predict(reg_pruned_tree, newdata = transformed_data[-reg_train_split,]) 
+reg_test2 = transformed_data[-reg_train_split, 'Area'] 
+plot(reg_predict2, reg_test2, xlab = "Predicted", ylab = "Actual", 
+     type = "p", pch = 20, col = colors()[371])
+abline(0,1)
+
+# calculate the mean squared error
+MSE2 <- mean((reg_predict2-reg_test2)^2)
+cat("MSE: ", MSE2, "\t", "Sqrt MSE: ", sqrt(MSE2), "\n", sep = "")
+```
+
+### 4.2 Classification Tree
+```{r}
+# mapping target variable to a categorical variable
+# make the target variable for classification task Fire = c('Yes', 'No')
+# if the burnt area is zero, Fire variable is set as 'No', else 'Yes' 
+
+# remove the last column 'Area'
+classification_data <- transformed_data[-13]
+# add the new target variable 'Fire'
+# make it a factor variable to facilitate building the classification tree
+classification_data$Fire <- as.factor(ifelse(transformed_data$Area==0, "No", "Yes"))
+head(classification_data)
+```
+
+### 4.2.1 Classification Tree for Complete Dataset
+
+```{r}
+# tree model for the complete dataset
+cl_tree1 <- tree(Fire~., data = classification_data)
+
+# plot the tree model
+plot(cl_tree1, col = colors()[60])
+text(cl_tree1, pretty = 0)
+
+# get the summary of the tree
+summary(cl_tree1)
+print(cl_tree1)
+
+# predict using the classification tree model
+cl_predict1 <- predict(cl_tree1, classification_data, type = "class")
+# get the confusion matrix
+table(cl_predict1, classification_data$Fire)
+# calculate the misclassification error rate
+misclass.tree(cl_tree1)/dim(classification_data)[1]
+```
+
+### 4.2.2 Classification Tree with train-test split and cross validation
+
+```{r, fig.height=10, fig.width=15}
+# set seed for sampling
+set.seed(2)
+# divide the training and testing datasets to 50:50 ratio
+cl_train_split <- sample(1:nrow(classification_data), nrow(classification_data)*0.5)
+cl_train <- classification_data[cl_train_split,]
+cl_test <- classification_data[-cl_train_split,]
+
+dim(cl_train)
+dim(cl_test)
+
+# build the tree model for training data
+cl_tree2 <- tree(Fire~., data = cl_train)
+
+# plot the tree model
+plot(cl_tree2, col = colors()[99])
+text(cl_tree2, pretty = 0)
+
+# print the tree details
+summary(cl_tree2)
+print(cl_tree2)
+
+# predict using the classification tree
+cl_predict2 <- predict(cl_tree2, cl_test, type = "class")
+# get the misclassification table
+table(cl_predict2, classification_data$Fire[-cl_train_split])
+# calculate the misclassification error rate
+misclass.tree(cl_tree2)/dim(cl_test)[1]
+```
+
+```{r}
+# run k-fold cross validation with k=10 
+# use prune.misclass to use misclassification error rate for cross validation instead of deviation
+set.seed(2)
+cl_tree_cv <- cv.tree(cl_tree2, FUN = prune.misclass)
+cl_tree_cv
+
+# plot the cross validation results
+# cross validation error of the model against the size of the tree
+plot(cl_tree_cv$size, cl_tree_cv$dev, type = "b", col = colors()[99], 
+     xlab = "Size", ylab = "Cross Validation Error Rate")
+
+# prune tree based on the cv results - for 4 leaf nodes
+cl_pruned_tree = prune.misclass(cl_tree2, best = 4) 
+
+# plot the pruned tree
+plot(cl_pruned_tree, col = colors()[99]) 
+text(cl_pruned_tree, pretty = 0)
+
+# summary of the pruned tree
+summary(cl_pruned_tree)
+
+# predict using the pruned tree
+cl_predict3 <- predict(cl_pruned_tree, cl_test, type = "class")
+# get the misclassification table
+table(cl_predict3, classification_data$Fire[-cl_train_split])
+# calculate the misclassification error rate
+misclass.tree(cl_pruned_tree)/dim(cl_test)[1]
+
+# prune tree based on the cv results - for 6 leaf nodes
+cl_pruned_tree2 = prune.misclass(cl_tree2, best = 6) 
+
+# plot the pruned tree
+plot(cl_pruned_tree2, col = colors()[99]) 
+text(cl_pruned_tree2, pretty = 0)
+
+# summary of the pruned tree
+summary(cl_pruned_tree2)
+
+# predict using the pruned tree
+cl_predict4 <- predict(cl_pruned_tree2, cl_test, type = "class")
+# get the misclassification table
+table(cl_predict4, classification_data$Fire[-cl_train_split])
+# calculate the misclassification error rate
+misclass.tree(cl_pruned_tree2)/dim(cl_test)[1]
+```
+
+### 5. Multiple Linear Regression
+
+```{r fig.height=6, fig.width=6}
+# filter only the numerical variables for regression
+numerical_data <- transformed_data[5:13]
+
+# normalise dataset
+normalise <- function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+fire_norm <- as.data.frame(lapply(numerical_data, normalise))
+head(fire_norm)
+```
+
+### 5.1 Model 1 - Using all Numerical Variables
+```{r}
+# linear model using all the numerical variables
+lin_model1 <- lm(Area ~ ., data = fire_norm)
+summary(lin_model1)
+par(mfrow=c(2,2))
+plot(lin_model1, pch = 20, col = colors()[371])
+```
+
+### Model 1 Improvement - Excluding Influential Data Points
+
+```{r}
+# linear model without influential data points
+# removing point 500
+fire_norm1 <- fire_norm[-c(500),]
+lin_model2a <- lm(Area ~ ., data = fire_norm1)
+summary(lin_model2a)
+par(mfrow=c(2,2))
+plot(lin_model2a, pch = 20, col = colors()[466])
+
+# removing point 510
+fire_norm <- fire_norm[-c(500, 510),]
+lin_model2b <- lm(Area ~ ., data = fire_norm)
+summary(lin_model2b)
+par(mfrow=c(2,2))
+plot(lin_model2b, pch = 20, col = colors()[466])
+```
+
+### 5.2 Model 2 - Using step-wise Feature Selection
+
+```{r}
+# perform step-wise feature selection
+step(lm(Area~., data = fire_norm), direction = 'both')
+
+# linear model using variables selected from step-wise selection
+lin_model4 <- lm(Area ~ DMC+Rain+Wind, data = fire_norm)
+summary(lin_model4)
+par(mfrow=c(2,2))
+plot(lin_model4, pch = 20, col = colors()[132])
+```
+
+### 6. Non-linear Models
+
+```{r fig.width=16, fig.height=12}
+# pairplot 
+pairs(fire_norm, panel = panel.smooth, pch = 20, col = colors()[125])
+```
+
+### 6.1 Model 1 - Using Polynomial and Interaction Terms
+
+```{r warning=FALSE}
+# complex model
+nolin_model1 <- lm(Area ~ .+ I(Temperature^2) + I(ISI^2) + I(FFMC^2) + I(DMC^2) + I(Wind^2)
+                   + DC*ISI + RH*Wind*Rain + Temperature*Wind + I(ISI^2)*Wind + FFMC*ISI 
+                   + Temperature*DMC -ISI -RH, data = fire_norm)
+summary(nolin_model1)
+par(mfrow=c(2,2))
+plot(nolin_model1, pch = 20, col = colors()[371])
+```
+
+### 6.2 Model 2 - Using Most Significant Terms
+
+```{r warning=FALSE}
+# simplified model
+nolin_model2 <- lm(Area ~ .+ I(Temperature^2) + I(FFMC^2) + I(Wind^2)
+                   + DC*ISI + RH*Rain + I(ISI^2)*Wind
+                   -ISI -RH -DMC -Rain -Wind, data = fire_norm)
+summary(nolin_model2)
+# calculate MSE
+mean(residuals(nolin_model2)^2)
+par(mfrow=c(2,2))
+plot(nolin_model2, pch = 20, col = colors()[132])
+```
+
+### 7. Regression Model Comparison
+
+```{r}
+# split into train and test sets
+# set seed for sampling
+set.seed(2)
+dim(fire_norm)
+fire_norm <- fire_norm[-c(500, 510),]
+# divide the training and testing datasets to 50:50 ratio
+reg_split <- sample(1:nrow(fire_norm), nrow(fire_norm)*0.5)
+reg_train <- fire_norm[reg_split,]
+reg_test <- fire_norm[-reg_split,]
+
+dim(reg_train)
+dim(reg_test)
+```
+
+### 7.1 Cross Validation for Linear Models
+
+```{r}
+# Model 1
+m1 <- glm(Area~., data = reg_train)
+cv1 <- cv.glm(reg_train, m1, K=10)
+cv1$delta
+pred1 <- predict(m1, reg_test)
+mse1 <- mean((fire_norm$Area[-reg_split]-pred1)^2)
+mse1
+```
+
+```{r}
+# Model 1
+m1 <- glm(Area~., data = reg_train)
+cv1 <- cv.glm(reg_train, m1, K=10)
+cv1$delta
+pred1 <- predict(m1, reg_test)
+mse1 <- mean((fire_norm$Area[-reg_split]-pred1)^2)
+mse1
+```
+
+
+### 7.2 Cross Validation for Non-Linear Models
+
+```{r}
+# Model 1
+m1 <- glm(Area~., data = reg_train)
+cv1 <- cv.glm(reg_train, m1, K=10)
+cv1$delta
+pred1 <- predict(m1, reg_test)
+mse1 <- mean((fire_norm$Area[-reg_split]-pred1)^2)
+mse1
+```
+
+```{r}
+# Model 1
+m1 <- glm(Area~., data = reg_train)
+cv1 <- cv.glm(reg_train, m1, K=10)
+cv1$delta
+pred1 <- predict(m1, reg_test)
+mse1 <- mean((fire_norm$Area[-reg_split]-pred1)^2)
+mse1
+```
+
+### 7. Principal Component Analysis
+
+```{r}
+# PCA 
+pca_comps <- prcomp(fire_norm[,-9], scale. = TRUE)
+summary(pca_comps)
+pca_comps$rotation
+screeplot(pca_comps, main = "")
+
+# proportion of variance explained
+var <- pca_comps$sdev^2
+prop_var <- var/sum(var)
+plot(1:length(prop_var), prop_var, type = "b", col = colors()[60],
+     xlab = "Principal Component", ylab = "Proportion of Variance Explained")
+
+# cumulative variance
+cumulative_prop <- cumsum(prop_var)
+plot(1:length(cumulative_prop), cumulative_prop, type = "b", col = colors()[60],
+     xlab = "Principal Component", ylab = "Cumulative Proportion of Variance")
+```
+
+```{r}
+# using PCA for linear reg
+Area <- fire_norm[,9]
+pca_data <- data.frame(pca_comps$x, Area)
+```
+
+```{r fig.width=16, fig.height=12}
+pairs(pca_data, panel = panel.smooth, pch = 20, col = colors()[125])
+```
+
+```{r}
+lin_model_pca <- lm(Area~.+PC7*PC8, data = pca_data)
+summary(lin_model_pca)
+par(mfrow=c(2,2))
+plot(lin_model_pca, pch = 20, col = colors()[132])
+```
+
+### 8. K-means Clustering
+
+```{r}
+# kmeans clustering
+km_model <- kmeans(fire_norm[,1:8], centers = 2)
+km_clusters <- fitted(km_model, "classes")
+```
+
+```{r fig.width=15, fig.height=15}
+par(mfrow=c(3,3))
+i <- 1
+for (col in fire_norm) {
+  plot(col, 1:dim(fire_norm)[1],  col = km_clusters+1, type = "p", pch = 16, xlab = colnames(fire_norm)[i], ylab = "Index")
+  i <- i + 1
+}
+```
+
+### 9. Hierarchical Clustering
+
+### 9.1 Using Complete Linkage (Maximum distance)
+
+```{r fig.width=15, fig.height=12}
+hc_complete = hclust(dist(transformed_data[1:12]), method = "complete")
+h_clusters_c = cutree(hc_complete, k=4)
+plot(hc_complete, main = "Cluster Dendrogram (Maximum Distance)") 
+rect.hclust(hc_complete, k=4)
+```
+
+### 9.2 Using Average Linkage (Average Distance)
+
+```{r fig.width=15, fig.height=12}
+hc_average = hclust(dist(transformed_data[1:12]), method = "average")
+h_clusters_a = cutree(hc_average, k=4)
+plot(hc_average, main = "Cluster Dendrogram (Average Distance)") 
+rect.hclust(hc_average, k=4)
+```
+
+
+### 9.3 Using Single Linkage (Minimum Distance)
+
+```{r fig.width=15, fig.height=12}
+hc_simple = hclust(dist(transformed_data[1:12]), method = "single")
+h_clusters_s = cutree(hc_simple, k=4)
+plot(hc_simple, main = "Cluster Dendrogram (Minimum Distance)") 
+rect.hclust(hc_simple, k=4)
+```
+
+```{r fig.width=16, fig.height=16}
+par(mfrow=c(4,4))
+par(mar=c(1,1,1,1))
+i <- 1
+for (col in transformed_data) {
+  plot(col, 1:dim(transformed_data)[1], col = h_clusters_c+1, type = "p", 
+       pch = 16, xlab = colnames(transformed_data)[i], ylab = "Index")
+  i <- i + 1
+}
+```
+
+
+
